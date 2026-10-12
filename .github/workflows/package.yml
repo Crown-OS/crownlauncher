@@ -1,0 +1,14 @@
+# Builds an Arch package on a v* tag and publishes it on the release, where
+# Crown-OS/crownos-iso picks it up. Logic lives in Crown-OS/.github.
+name: Package
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    uses: Crown-OS/.github/.github/workflows/arch-package.yml@main
