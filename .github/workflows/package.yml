@@ -12,3 +12,4 @@ permissions:
 jobs:
   package:
     uses: Crown-OS/.github/.github/workflows/arch-package.yml@main
+    secrets: inherit
