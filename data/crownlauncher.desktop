@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Launcher
+GenericName=App Launcher
+Comment=Search apps and plugin answers from one glass window
+Exec=crownlauncher toggle
+Icon=system-search
+Terminal=false
+StartupWMClass=crownlauncher
+Categories=Utility;
+Keywords=launcher;search;run;apps;spotlight;raycast;
