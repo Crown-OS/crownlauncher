@@ -1,77 +1,84 @@
-//! The launcher as crownui views: one transparent overlay over the whole output, holding the
-//! home grid of glass tiles in its centre. The overlay itself takes input only while shown, so
-//! a click anywhere off the grid dismisses it.
+//! The launcher as crownui views: one transparent overlay over the whole output, holding a
+//! Raycast-style glass window in its centre — the search field, the list of what it found and a
+//! footer naming what Enter does. The overlay itself takes input only while shown, so a click
+//! anywhere off the window dismisses it.
 
 mod activate;
-mod arrange;
+mod catcher;
 mod follow;
+mod footer;
 mod glass;
-mod grid;
 mod images;
 mod keys;
-mod metrics;
+pub mod metrics;
 mod motion;
 mod palette;
 mod query;
 mod results;
 mod search_bar;
 mod state;
-mod tiles;
 mod visibility;
 
 use crownui::{
     kit::{self, Theme},
-    prelude::{Capabilities, Listeners, Styled, View, bind, component, vstack, zstack},
+    prelude::{Capabilities, Listeners, Styled, Vector, View, bind, component, vstack, zstack},
 };
-use jiff::Zoned;
 
+pub use catcher::catcher;
+use glass::glass;
 pub use palette::Palette;
 pub use state::Launcher;
+pub use visibility::Observers;
 
-use crate::{
-    catalog::Catalog,
-    ipc::{Remote, Shown},
-    settings::LauncherSettings,
-    weather::Report,
-};
+use tokio::sync::mpsc::UnboundedReceiver;
 
-/// How far the grid grows into place as it appears.
-const ENTRY_SCALE: f32 = 0.94;
+use crate::catalog::Catalog;
+use metrics::{HAIRLINE, WINDOW_HEIGHT, WINDOW_RADIUS, WINDOW_WIDTH};
 
-pub fn root(settings: LauncherSettings, remote: Remote, shown: bool) -> impl View {
+/// The launcher, following show and hide `requests` and keeping `observers` told; shown at once
+/// unless `shown` is false.
+pub fn root(requests: UnboundedReceiver<bool>, observers: Observers, shown: bool) -> impl View {
     component(move |cx| {
         let theme = kit::provide_configured_theme(cx);
-        let Remote {
-            requests,
-            shown: report,
-        } = remote;
-        let launcher = Launcher::new(cx, settings, theme, report);
+        let launcher = Launcher::new(cx, theme, observers);
         follow::start(cx, launcher, requests, shown);
-        zstack((dismiss(launcher), centred(launcher)))
+        zstack(centred(launcher))
             .pointer_events_none()
             .on_key_down(move |cx, event| keys::down(cx, launcher, event))
     })
 }
 
-fn dismiss(launcher: Launcher) -> impl View {
+fn hairline(launcher: Launcher) -> impl View {
     vstack(())
-        .absolute()
-        .inset(0.0)
-        .pointer_events_auto()
-        .hidden(bind(move |runtime| !launcher.shown.get(runtime)))
-        .on_click(move |cx, _| visibility::set(cx, launcher, false))
+        .w_full()
+        .h(HAIRLINE)
+        .shrink(0.0)
+        .bg(bind(move |runtime| launcher.palette(runtime).hairline))
+}
+
+fn window(launcher: Launcher) -> impl View {
+    let content = vstack((
+        search_bar::search_bar(launcher),
+        hairline(launcher),
+        results::results(launcher),
+    ))
+    .w_full()
+    .flex_1()
+    .min_h(0.0)
+    .translate(bind(move |runtime| {
+        Vector::new(0.0, motion::drop_offset(runtime, launcher))
+    }));
+    let body = vstack((content, hairline(launcher), footer::footer(launcher)))
+        .w(WINDOW_WIDTH)
+        .h(WINDOW_HEIGHT)
+        .overflow_hidden()
+        .pointer_events_auto();
+    glass(body, launcher, WINDOW_RADIUS)
 }
 
 fn centred(launcher: Launcher) -> impl View {
-    let panel = grid::grid(launcher)
-        .opacity(bind(move |runtime| {
-            launcher.reveal.get(runtime).clamp(0.0, 1.0)
-        }))
-        .scale(bind(move |runtime| {
-            let reveal = launcher.reveal.get(runtime).clamp(0.0, 1.0);
-            ENTRY_SCALE + (1.0 - ENTRY_SCALE) * reveal
-        }))
-        .pointer_events_auto()
+    let panel = vstack(window(launcher))
+        .pointer_events_none()
         .hidden(bind(move |runtime| !launcher.on_screen(runtime)));
     vstack(panel)
         .absolute()
@@ -84,15 +91,15 @@ fn centred(launcher: Launcher) -> impl View {
 /// One moment of the launcher, held still: for previews, screenshots and tests.
 pub struct Staging {
     pub dark: bool,
-    pub now: Zoned,
-    pub weather: Vec<Report>,
     pub catalog: Catalog,
     pub query: String,
+    /// How far the opening has come: the fade and the drop, 1 for at rest.
+    pub opening: (f32, f32),
 }
 
 /// The launcher shown in the state `staging` describes, following nothing, its glass drawn as
 /// if the compositor blurred behind it.
-pub fn staged(settings: LauncherSettings, staging: Staging) -> impl View {
+pub fn staged(staging: Staging) -> impl View {
     component(move |cx| {
         let theme = kit::provide_theme(
             cx,
@@ -102,7 +109,7 @@ pub fn staged(settings: LauncherSettings, staging: Staging) -> impl View {
                 Theme::light()
             },
         );
-        let launcher = Launcher::new(cx, settings, theme, Shown::default());
+        let launcher = Launcher::new(cx, theme, Observers::default());
         let capabilities = launcher.capabilities.get(cx);
         launcher.capabilities.set(
             cx,
@@ -112,11 +119,11 @@ pub fn staged(settings: LauncherSettings, staging: Staging) -> impl View {
             },
         );
         launcher.shown.set(cx, true);
-        launcher.reveal.set(cx, 1.0);
-        launcher.now.set(cx, staging.now);
-        launcher.weather.set(cx, staging.weather);
+        launcher.reveal.set(cx, staging.opening.0);
+        launcher.settle.set(cx, staging.opening.1);
         launcher.catalog.set(cx, staging.catalog);
-        query::edit(cx, launcher, |query| *query = staging.query);
+        launcher.query.set(cx, staging.query);
+        query::list_apps(cx, launcher);
         zstack(centred(launcher)).absolute().inset(0.0)
     })
 }

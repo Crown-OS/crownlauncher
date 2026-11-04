@@ -1,101 +1,89 @@
 use std::collections::{HashMap, HashSet};
 
-use crownplugin_proto::LauncherSnapshot;
 use crownui::{
     ext::ImageId,
     kit::{Theme, ThemeMode},
     prelude::{Capabilities, Cx, Runtime, Signal, Store},
 };
-use jiff::Zoned;
 use tokio::sync::mpsc::UnboundedSender;
 
-use super::{motion::Motion, palette::Palette};
+use super::{
+    motion::{Motion, opacity},
+    palette::Palette,
+    visibility::Observers,
+};
 use crate::{
     catalog::{Catalog, DesktopId},
-    ipc::Shown,
     plugins::PluginCommand,
     search::{Results, Selection},
-    settings::LauncherSettings,
-    weather::{Condition, Report},
 };
 
 /// Below this much revealed the launcher is gone: nothing drawn, no glass, no input.
 const HIDDEN: f32 = 0.001;
 
-/// Which picture an image was decoded for, at which pixel size.
+/// An app's icon, decoded `edge` pixels square.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum Art {
-    App(DesktopId, u32),
-    Weather(Condition, bool, u32),
+pub struct AppIcon {
+    pub id: DesktopId,
+    pub edge: u32,
 }
 
 /// Everything the launcher's views read, as copyable handles.
 #[derive(Clone, Copy)]
 pub struct Launcher {
-    pub settings: Signal<LauncherSettings>,
     pub catalog: Signal<Catalog>,
     pub theme: Signal<Theme>,
     pub capabilities: Signal<Capabilities>,
     pub scale: Signal<f32>,
     pub shown: Signal<bool>,
+    /// How far the glass has faded in, 0 to 1.
     pub reveal: Signal<f32>,
+    /// How far the window has dropped into place, 0 to 1 and a little past while it bounces.
+    pub settle: Signal<f32>,
     pub motion: Store<Motion>,
     pub query: Signal<String>,
     pub results: Signal<Results>,
     pub selection: Signal<Selection>,
-    pub now: Signal<Zoned>,
-    pub weather: Signal<Vec<Report>>,
-    pub images: Signal<HashMap<Art, ImageId>>,
-    pub requested: Store<HashSet<Art>>,
-    pub tiles: Signal<LauncherSnapshot>,
-    /// Counts crownplugind connections: tree revisions only compare within one.
-    pub session: Signal<u64>,
+    pub icons: Signal<HashMap<AppIcon, ImageId>>,
+    pub requested: Store<HashSet<AppIcon>>,
     pub plugins: Store<Option<UnboundedSender<PluginCommand>>>,
-    pub report: Store<Shown>,
-    pub ticking: Store<bool>,
-    /// Bumped by every forecast refresh; a scheduled one that finds it moved on stands down.
-    pub forecast: Store<u64>,
+    pub observers: Store<Observers>,
 }
 
 impl Launcher {
-    pub fn new(
-        cx: &mut Cx,
-        settings: LauncherSettings,
-        theme: Signal<Theme>,
-        report: Shown,
-    ) -> Self {
+    pub fn new(cx: &mut Cx, theme: Signal<Theme>, observers: Observers) -> Self {
         let capabilities = cx.platform_capabilities();
         let scale = cx.scale_factor();
         Self {
-            settings: cx.signal(settings),
             catalog: cx.signal(Catalog::default()),
             theme,
             capabilities,
             scale,
             shown: cx.signal(false),
             reveal: cx.signal(0.0),
+            settle: cx.signal(0.0),
             motion: cx.store(Motion::default()),
             query: cx.signal(String::new()),
             results: cx.signal(Results::default()),
             selection: cx.signal(Selection::default()),
-            now: cx.signal(Zoned::now()),
-            weather: cx.signal(Vec::new()),
-            images: cx.signal(HashMap::new()),
+            icons: cx.signal(HashMap::new()),
             requested: cx.store(HashSet::new()),
-            tiles: cx.signal(LauncherSnapshot::default()),
-            session: cx.signal(0),
             plugins: cx.store(None),
-            report: cx.store(report),
-            ticking: cx.store(false),
-            forecast: cx.store(0),
+            observers: cx.store(observers),
         }
     }
 
+    /// The colours to paint with now, faded as far as the window has faded in.
     pub fn palette(self, runtime: &mut Runtime) -> Palette {
-        Palette::new(
-            self.theme
-                .with(runtime, |theme| theme.mode == ThemeMode::Dark),
-        )
+        let dark = self
+            .theme
+            .with(runtime, |theme| theme.mode == ThemeMode::Dark);
+        Palette::new(dark).faded(self.presence(runtime))
+    }
+
+    /// How far the window has faded in, at full strength once nearly there.
+    pub fn presence(self, runtime: &mut Runtime) -> f32 {
+        opacity(self.reveal.get(runtime))
     }
 
     /// Whether the compositor blurs what is behind the glass.
@@ -112,8 +100,8 @@ impl Launcher {
         self.query.with(runtime, |query| !query.trim().is_empty())
     }
 
-    pub fn image(self, runtime: &mut Runtime, art: &Art) -> Option<ImageId> {
-        self.images.with(runtime, |images| images.get(art).copied())
+    pub fn icon(self, runtime: &mut Runtime, icon: &AppIcon) -> Option<ImageId> {
+        self.icons.with(runtime, |icons| icons.get(icon).copied())
     }
 
     /// Device pixels for `logical` at the current scale.

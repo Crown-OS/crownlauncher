@@ -1,8 +1,6 @@
 mod decode;
 mod lookup;
 
-pub use decode::rasterize_svg;
-
 /// Straight-alpha RGBA, ready for `Cx::register_image`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Pixels {

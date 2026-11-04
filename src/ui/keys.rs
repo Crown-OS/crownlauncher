@@ -4,10 +4,12 @@ use crownui::{
 };
 
 use super::{
-    activate::activate, grid::arrangement, query::edit, results::fitted, state::Launcher,
+    activate::activate,
+    query::edit,
+    results::{fitted, selected_hit},
+    state::Launcher,
     visibility,
 };
-use crate::search::Hit;
 
 pub fn down(cx: &mut Cx, launcher: Launcher, event: &mut Event<KeyboardEvent>) {
     let modifiers = event.modifiers;
@@ -21,7 +23,7 @@ pub fn down(cx: &mut Cx, launcher: Launcher, event: &mut Event<KeyboardEvent>) {
             }
         }
         Key::Named(NamedKey::Enter) => {
-            if let Some(hit) = selected(cx, launcher) {
+            if let Some(hit) = selected_hit(cx, launcher) {
                 activate(cx, launcher, &hit);
             }
         }
@@ -57,21 +59,15 @@ pub fn down(cx: &mut Cx, launcher: Launcher, event: &mut Event<KeyboardEvent>) {
     event.prevent_default();
 }
 
-fn shown_hits(cx: &mut Cx, launcher: Launcher) -> Vec<Hit> {
-    let frame = arrangement(cx, launcher).results;
-    fitted(cx, launcher, frame.size.height)
-        .into_iter()
-        .flat_map(|section| section.rows.into_iter().map(|row| row.hit))
-        .collect()
-}
-
-fn selected(cx: &mut Cx, launcher: Launcher) -> Option<Hit> {
-    let index = launcher.selection.get(cx).0;
-    shown_hits(cx, launcher).into_iter().nth(index)
+fn shown_rows(cx: &mut Cx, launcher: Launcher) -> usize {
+    fitted(cx, launcher)
+        .iter()
+        .map(|section| section.rows.len())
+        .sum()
 }
 
 fn step(cx: &mut Cx, launcher: Launcher, by: isize) {
-    let rows = shown_hits(cx, launcher).len();
+    let rows = shown_rows(cx, launcher);
     launcher
         .selection
         .update(cx, |selection| *selection = selection.step(by, rows));

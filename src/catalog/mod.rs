@@ -31,7 +31,9 @@ impl Catalog {
         Self::new(scan(&xdg::application_dirs()))
     }
 
-    pub fn new(apps: Vec<AppEntry>) -> Self {
+    /// The apps sorted by name, which is how an empty query lists them.
+    pub fn new(mut apps: Vec<AppEntry>) -> Self {
+        apps.sort_by_cached_key(|app| app.name.to_lowercase());
         Self { apps: apps.into() }
     }
 
@@ -44,8 +46,11 @@ impl Catalog {
         &self.apps
     }
 
-    /// The apps matching `query`, best first, at most `limit`.
+    /// The apps matching `query`, best first, at most `limit`; every app by name when it is empty.
     pub fn search(&self, query: &Query, limit: usize) -> Vec<&AppEntry> {
+        if query.is_empty() {
+            return self.apps.iter().take(limit).collect();
+        }
         let mut scored: Vec<(u32, &AppEntry)> = self
             .apps
             .iter()
@@ -134,5 +139,20 @@ mod tests {
             .map(|app| app.name.as_str())
             .collect();
         assert_eq!(names, ["Files", "Firefox"]);
+    }
+
+    #[test]
+    fn an_empty_query_lists_every_app_by_name() {
+        let catalog = Catalog::new(vec![
+            app("zed", "Zed"),
+            app("blender", "blender"),
+            app("atom", "Atom"),
+        ]);
+        let names: Vec<_> = catalog
+            .search(&Query::new("  "), 2)
+            .into_iter()
+            .map(|app| app.name.as_str())
+            .collect();
+        assert_eq!(names, ["Atom", "blender"]);
     }
 }

@@ -19,7 +19,7 @@ pub fn decode(path: &Path, edge: u32) -> Result<Pixels> {
 }
 
 /// Renders SVG `bytes` centred and fitted into `width` × `height` pixels.
-pub fn rasterize_svg(bytes: &[u8], width: u32, height: u32) -> Result<Pixels> {
+fn rasterize_svg(bytes: &[u8], width: u32, height: u32) -> Result<Pixels> {
     let tree = usvg::Tree::from_data(bytes, &usvg::Options::default()).context("parse svg")?;
     let size = tree.size();
     let scale = (width as f32 / size.width().max(1.0)).min(height as f32 / size.height().max(1.0));

@@ -1,7 +1,8 @@
 //! Renders the launcher through Impeller, offscreen, over a wallpaper, to a PNG — the same
 //! frame the compositor would blur behind, with the blur done in-app.
 //!
-//! `cargo run --example preview -- <out.png> [wallpaper.png] [--dark] [--query <text>]`
+//! `cargo run --example preview -- <out.png> [wallpaper.png] [--dark] [--query <text>]
+//!     [--opening <fade> <drop>]`
 
 use std::{
     any::Any,
@@ -13,17 +14,14 @@ use std::{
 use anyhow::{Context, Result};
 use crownlauncher::{
     catalog::Catalog,
-    settings::LauncherSettings,
     ui::{Staging, staged},
-    weather::{Condition, Report},
 };
 use crownui::{
     ext::TextSystem,
     kit,
-    prelude::{Size, Styled, View, image, zstack},
+    prelude::{CornerShape, Size, Styled, View, image, zstack},
 };
 use impeller::{ImpellerBackend, Offscreen};
-use jiff::civil::date;
 use runtime::InlineApp;
 use taffy_layout::TaffyEngine;
 use view::{TaskExecutor, TaskFuture, TaskId};
@@ -62,36 +60,6 @@ fn run_tasks(app: &mut InlineApp<ImpellerBackend, TaffyEngine>) -> Result<Receiv
     Ok(outputs)
 }
 
-/// The default apps where they are installed, and otherwise whichever are.
-fn installed(wanted: &[String], catalog: &Catalog, count: usize) -> Vec<String> {
-    let present: Vec<String> = wanted
-        .iter()
-        .filter(|id| catalog.get(id).is_some())
-        .cloned()
-        .collect();
-    if present.len() >= count {
-        return present;
-    }
-    catalog
-        .apps()
-        .iter()
-        .filter(|app| app.icon.is_some())
-        .map(|app| app.id.as_str().to_owned())
-        .take(count)
-        .collect()
-}
-
-fn report(city: &str, temperature: f32, high: f32, low: f32, condition: Condition) -> Report {
-    Report {
-        city: city.to_owned(),
-        temperature,
-        high,
-        low,
-        condition,
-        night: false,
-    }
-}
-
 fn wallpaper(path: Option<&PathBuf>) -> Result<Option<impl View>> {
     let Some(path) = path else {
         return Ok(None);
@@ -110,11 +78,18 @@ fn wallpaper(path: Option<&PathBuf>) -> Result<Option<impl View>> {
 fn main() -> Result<()> {
     let mut arguments = std::env::args().skip(1);
     let mut positional = Vec::new();
-    let (mut dark, mut query) = (false, String::new());
+    let (mut dark, mut query, mut opening) = (false, String::new(), (1.0, 1.0));
+    let fraction = |arguments: &mut dyn Iterator<Item = String>| {
+        arguments
+            .next()
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(1.0)
+    };
     while let Some(argument) = arguments.next() {
         match argument.as_str() {
             "--dark" => dark = true,
             "--query" => query = arguments.next().unwrap_or_default(),
+            "--opening" => opening = (fraction(&mut arguments), fraction(&mut arguments)),
             _ => positional.push(PathBuf::from(argument)),
         }
     }
@@ -125,21 +100,11 @@ fn main() -> Result<()> {
 
     let staging = Staging {
         dark,
-        now: date(2026, 5, 24)
-            .at(8, 16, 30, 0)
-            .in_tz("Europe/Berlin")
-            .context("the zone database")?,
-        weather: vec![
-            report("Munich", 18.0, 26.0, 3.0, Condition::PartlyCloudy),
-            report("Paris", 16.0, 24.0, 5.0, Condition::Rain),
-        ],
         catalog: Catalog::load(),
         query,
+        opening,
     };
-    let mut settings = LauncherSettings::default();
-    settings.shortcuts = installed(&settings.shortcuts, &staging.catalog, 2);
-    settings.pinned = installed(&settings.pinned, &staging.catalog, 3);
-    let view = zstack((wallpaper(positional.get(1))?, staged(settings, staging)));
+    let view = zstack((wallpaper(positional.get(1))?, staged(staging)));
     let surface = Offscreen {
         width: (SURFACE.width * SCALE) as u32,
         height: (SURFACE.height * SCALE) as u32,
@@ -154,6 +119,7 @@ fn main() -> Result<()> {
     )
     .context("creating the offscreen renderer")?;
     app.ui().set_emulate_materials(true);
+    app.set_corner_shape(CornerShape::Squircle);
     app.text_cache()
         .system_mut()
         .register_font(kit::inter_font().to_vec(), Some(kit::INTER_FAMILY))?;

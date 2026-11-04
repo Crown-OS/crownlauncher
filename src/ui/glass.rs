@@ -1,108 +1,56 @@
-//! The frosted glass every tile sits on: the compositor blurs and shadows each tile's shape,
-//! and the tile lays its own milky or clear tint and bright rim over that.
+//! The frosted glass the window sits on: the compositor blurs its shape and casts a soft halo
+//! around it, and the launcher lays its tint and bright rim over that.
 
 use crownui::prelude::{
     Color, Material, MaterialBlur, MaterialShadow, Runtime, Styled, TRANSPARENT, Vector, bind,
 };
 
-use super::{metrics::RIM, palette::Palette, state::Launcher};
+use super::{metrics::RIM, state::Launcher};
 
 const BLUR_RADIUS: f32 = 30.0;
 const VIBRANCY: f32 = 1.7;
-const SHADOW_RADIUS: f32 = 28.0;
-const SHADOW_OFFSET: f32 = 10.0;
+const HALO_RADIUS: f32 = 30.0;
+const HALO_OFFSET: f32 = 12.0;
 
-/// When a piece of glass is on screen. The compositor blurs every shape not hidden itself,
-/// whatever its parents, so each pane hides on its own.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Showing {
-    /// The home grid, gone while searching.
-    Home,
-    /// The results, there only while searching.
-    Search,
-    /// The search field.
-    Always,
-}
-
-impl Showing {
-    pub fn hidden(self, runtime: &mut Runtime, launcher: Launcher) -> bool {
-        if !launcher.on_screen(runtime) {
-            return true;
-        }
-        match self {
-            Self::Home => launcher.searching(runtime),
-            Self::Search => !launcher.searching(runtime),
-            Self::Always => false,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Glass {
-    /// Frosted white: the widgets.
-    Milky,
-    /// Almost clear, the desktop vivid through it: the search field.
-    Clear,
-}
-
-impl Glass {
-    fn fill(self, palette: &Palette, blurred: bool) -> Color {
-        match (self, blurred) {
-            (Self::Milky, true) => palette.glass,
-            (Self::Milky, false) => palette.solid_glass,
-            (Self::Clear, true) => palette.clear_glass,
-            (Self::Clear, false) => palette.solid_clear,
-        }
-    }
-
-    fn rim(self, palette: &Palette) -> Color {
-        match self {
-            Self::Milky => palette.rim,
-            Self::Clear => palette.clear_rim,
-        }
-    }
-}
-
-/// The compositor's part at `reveal`: blur and shadow come up with the launcher, squared so they
+/// The compositor's part at `reveal`: blur and halo come up with the launcher, squared so they
 /// are gone before it is and never frost an empty patch of desktop.
-pub fn material(runtime: &mut Runtime, launcher: Launcher) -> Material {
+fn material(runtime: &mut Runtime, launcher: Launcher) -> Material {
     let strength = launcher.reveal.get(runtime).clamp(0.0, 1.0).powi(2);
-    let shadow = launcher.palette(runtime).shadow;
+    let halo = launcher.palette(runtime).halo;
     Material {
         corner_radius: 0.0,
-        border_width: 1.0,
+        border_width: RIM,
         blur: Some(MaterialBlur {
             radius: BLUR_RADIUS * strength,
             tint: TRANSPARENT,
             saturation: 1.0 + (VIBRANCY - 1.0) * strength,
         }),
         shadow: Some(MaterialShadow {
-            radius: SHADOW_RADIUS,
-            offset: Vector::new(0.0, SHADOW_OFFSET),
+            radius: HALO_RADIUS,
+            offset: Vector::new(0.0, HALO_OFFSET),
             color: Color {
-                a: shadow.a * strength,
-                ..shadow
+                a: halo.a * strength,
+                ..halo
             },
         }),
     }
 }
 
-/// Puts `element` on glass with corners of `radius`.
-pub fn glass<E: Styled>(
-    element: E,
-    launcher: Launcher,
-    kind: Glass,
-    radius: f32,
-    showing: Showing,
-) -> E {
+/// Puts `element` on glass with corners of `radius`. The compositor blurs every shape not hidden
+/// itself, whatever its parents, so the glass hides on its own once the launcher is gone.
+pub fn glass<E: Styled>(element: E, launcher: Launcher, radius: f32) -> E {
     element
-        .hidden(bind(move |runtime| showing.hidden(runtime, launcher)))
+        .hidden(bind(move |runtime| !launcher.on_screen(runtime)))
         .rounded(radius)
         .border(RIM)
-        .border_color(bind(move |runtime| kind.rim(&launcher.palette(runtime))))
+        .border_color(bind(move |runtime| launcher.palette(runtime).rim))
         .bg(bind(move |runtime| {
-            let blurred = launcher.blurs(runtime);
-            kind.fill(&launcher.palette(runtime), blurred)
+            let palette = launcher.palette(runtime);
+            if launcher.blurs(runtime) {
+                palette.glass
+            } else {
+                palette.solid_glass
+            }
         }))
         .material(bind(move |runtime| material(runtime, launcher)))
 }

@@ -3,27 +3,22 @@ name = "crownlauncher"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.97"
-description = "A Spotlight-style launcher for CrownOS: a home grid of glass widgets and a search that crownplugins extend"
+description = "A Raycast-style launcher for CrownOS: a glass search window that crownplugins extend"
 license = "MIT"
 repository = "https://github.com/crown-os/crownlauncher"
 
 [dependencies]
 crownui = { git = "https://github.com/crown-os/crownui", default-features = false, features = ["wayland", "impeller", "static", "tokio"] }
-crownconfig = { git = "https://github.com/crown-os/crownui" }
 motion = { git = "https://github.com/crown-os/crownui" }
 crownos-ipc = { git = "https://github.com/crown-os/crownos-ipc", features = ["tokio"] }
 crownplugin-proto = { git = "https://github.com/crown-os/crownos-plugins" }
-crownplugin-render = { git = "https://github.com/crown-os/crownos-plugins" }
 crownplugin-view = { git = "https://github.com/crown-os/crownos-plugins", features = ["icons"] }
 
 anyhow = "1"
+serde = { version = "1", features = ["derive"] }
 log = "0.4"
 env_logger = "0.11"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
 tokio = { version = "1", features = ["rt", "sync", "time"] }
-jiff = { version = "0.2", features = ["serde"] }
-ureq = { version = "3", default-features = false, features = ["rustls"] }
 
 freedesktop_entry_parser = "1.3"
 freedesktop-icons = "0.4"
@@ -31,7 +26,6 @@ resvg = { version = "0.48", default-features = false }
 image = { version = "0.25", default-features = false, features = ["png"] }
 
 [dev-dependencies]
-ron = "0.12"
 crowntest = { git = "https://github.com/crown-os/crownui" }
 impeller = { git = "https://github.com/crown-os/crownui", features = ["static"] }
 runtime = { git = "https://github.com/crown-os/crownui" }
@@ -53,7 +47,6 @@ strip = "symbols"
 # stand in for their GitHub sources.
 [patch."https://github.com/crown-os/crownui"]
 crownui = { path = "../crownui/crownui" }
-crownconfig = { path = "../crownui/crownconfig" }
 motion = { path = "../crownui/motion" }
 crowntest = { path = "../crownui/crowntest" }
 impeller = { path = "../crownui/impeller" }
@@ -63,7 +56,6 @@ view = { path = "../crownui/view" }
 
 [patch."https://github.com/crown-os/crownos-plugins"]
 crownplugin-proto = { path = "../crownos-plugins/proto" }
-crownplugin-render = { path = "../crownos-plugins/render" }
 crownplugin-view = { path = "../crownos-plugins/view" }
 
 [patch."https://github.com/crown-os/crownos-ipc"]

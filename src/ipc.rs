@@ -34,6 +34,8 @@ impl Shown {
 /// Show (`true`) and hide (`false`) requests for the UI, and where it reports back.
 pub struct Remote {
     pub requests: UnboundedReceiver<bool>,
+    /// Sends requests as another invocation would, for parts of the launcher outside the UI.
+    pub requester: UnboundedSender<bool>,
     pub shown: Shown,
 }
 
@@ -72,7 +74,7 @@ pub fn serve() -> Result<Remote> {
     let shown = Shown::default();
     let mut handler = Handler {
         shown: shown.clone(),
-        sender,
+        sender: sender.clone(),
     };
     std::thread::Builder::new()
         .name("crownlauncher-ipc".into())
@@ -85,7 +87,11 @@ pub fn serve() -> Result<Remote> {
             }
         })
         .context("start the IPC thread")?;
-    Ok(Remote { requests, shown })
+    Ok(Remote {
+        requests,
+        requester: sender,
+        shown,
+    })
 }
 
 struct Handler {
