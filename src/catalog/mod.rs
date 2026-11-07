@@ -81,7 +81,7 @@ pub fn launch(app: &AppEntry) {
     if app.terminal {
         argv.insert(0, TERMINAL_LAUNCHER.to_owned());
     }
-    spawn_detached(argv);
+    spawn_detached(argv, app.gpu);
 }
 
 #[cfg(test)]
@@ -89,7 +89,7 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
-    use crate::search::SearchKey;
+    use crate::{search::SearchKey, util::non_default_gpu::GpuPreference};
 
     #[test]
     fn a_name_match_outranks_a_keyword_match() {
@@ -113,6 +113,7 @@ mod tests {
             icon: None,
             exec: Some(id.to_owned()),
             terminal: false,
+            gpu: GpuPreference::Default,
             categories: Vec::new(),
             keys: vec![SearchKey::new(name)],
         }

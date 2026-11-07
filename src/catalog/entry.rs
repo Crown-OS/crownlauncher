@@ -3,7 +3,10 @@ use std::path::PathBuf;
 use freedesktop_entry_parser::{AttrSelector, Entry};
 
 use super::DesktopId;
-use crate::{search::SearchKey, util::locale};
+use crate::{
+    search::SearchKey,
+    util::{locale, non_default_gpu::GpuPreference},
+};
 
 const SECTION: &str = "Desktop Entry";
 const APPLICATION: &str = "Application";
@@ -19,6 +22,7 @@ pub struct AppEntry {
     pub icon: Option<String>,
     pub exec: Option<String>,
     pub terminal: bool,
+    pub gpu: GpuPreference,
     pub categories: Vec<String>,
     pub keys: Vec<SearchKey>,
 }
@@ -60,6 +64,7 @@ impl AppEntry {
             icon: text("Icon"),
             exec: section.attr("Exec").map(str::to_owned),
             terminal: flag(&section, "Terminal"),
+            gpu: GpuPreference::from_desktop_entry(section.attr(GpuPreference::DESKTOP_ENTRY_KEY)),
             categories: list(section.attr("Categories")),
             keys,
             name,
@@ -153,6 +158,19 @@ mod tests {
         let kde_only = format!("{APP}OnlyShowIn=KDE;\n");
         assert!(parse(&kde_only, None, &["CrownOS".to_owned()]).is_none());
         assert!(parse(&kde_only, None, &["KDE".to_owned()]).is_some());
+    }
+
+    #[test]
+    fn games_can_prefer_the_non_default_gpu() {
+        let game = format!("{APP}PrefersNonDefaultGPU=true\n");
+        assert_eq!(
+            parse(&game, None, &[]).map(|entry| entry.gpu),
+            Some(GpuPreference::NonDefault)
+        );
+        assert_eq!(
+            parse(APP, None, &[]).map(|entry| entry.gpu),
+            Some(GpuPreference::Default)
+        );
     }
 
     #[test]
