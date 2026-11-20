@@ -47,6 +47,7 @@ fn remote(cx: &mut Cx, launcher: Launcher, requests: OutputRequests) {
     });
 }
 
+/// Takes the answers meant for the shown window; the hidden ones ignore them.
 fn follow_answers(
     cx: &mut Cx,
     launcher: Launcher,
@@ -66,9 +67,11 @@ fn follow_answers(
         let Some(answer) = answer else {
             return;
         };
-        let mut results = launcher.results.get(cx);
-        if results.answer(answer) {
-            launcher.results.set(cx, results);
+        if launcher.shown.get(cx) {
+            let mut results = launcher.results.get(cx);
+            if results.answer(answer) {
+                launcher.results.set(cx, results);
+            }
         }
         follow_answers(cx, launcher, answers);
     });
