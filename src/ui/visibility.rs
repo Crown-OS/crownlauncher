@@ -2,7 +2,7 @@ use crownui::prelude::{Cx, KeyboardInteractivity};
 use tokio::sync::mpsc::UnboundedSender;
 
 use super::{follow, motion, query, state::Launcher};
-use crate::{ipc::Shown, plugins::PluginCommand};
+use crate::{ipc::Shown, plugins::PluginCommand, surfaces::LauncherSeat};
 
 /// Everything outside the UI that follows whether the launcher is shown.
 #[derive(Default)]
@@ -11,6 +11,8 @@ pub struct Observers {
     pub ipc: Shown,
     /// The click catcher under the window.
     pub catcher: Option<UnboundedSender<bool>>,
+    /// The output the launcher's surfaces are on.
+    pub seat: Option<LauncherSeat>,
 }
 
 impl Observers {
@@ -18,6 +20,16 @@ impl Observers {
         self.ipc.set(shown);
         if let Some(catcher) = &self.catcher {
             let _ = catcher.send(shown);
+        }
+        if shown && let Some(seat) = &self.seat {
+            seat.set_on_screen(true);
+        }
+    }
+
+    /// The launcher has faded out completely.
+    pub fn gone(&self) {
+        if let Some(seat) = &self.seat {
+            seat.set_on_screen(false);
         }
     }
 }

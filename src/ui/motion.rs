@@ -12,7 +12,7 @@ use std::time::Duration;
 use crownui::prelude::{Cx, Runtime, Spring};
 use motion::{Animation, Curve};
 
-use super::state::Launcher;
+use super::{state::Launcher, visibility::Observers};
 
 /// How far above their place the window's contents start.
 const ENTRY_DROP: f32 = 12.0;
@@ -143,6 +143,8 @@ fn frame(cx: &mut Cx, launcher: Launcher, now: Duration) {
     if fading || settling {
         launcher.motion.update(cx, |motion| motion.scheduled = true);
         cx.request_animation_frame(move |cx, now| frame(cx, launcher, now));
+    } else if !launcher.shown.get(cx) {
+        launcher.observers.with(cx, Observers::gone);
     }
 }
 

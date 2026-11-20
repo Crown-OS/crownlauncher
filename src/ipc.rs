@@ -11,7 +11,7 @@ use std::{
 
 use anyhow::{Context, Result};
 use crownos_ipc::{RemoteError, ServiceBuilder, blocking};
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
+use tokio::sync::watch;
 
 use crate::protocol::protocol;
 
@@ -26,16 +26,36 @@ impl Shown {
         self.0.store(shown, Ordering::Relaxed);
     }
 
-    fn get(&self) -> bool {
+    pub fn get(&self) -> bool {
         self.0.load(Ordering::Relaxed)
     }
 }
 
-/// Show (`true`) and hide (`false`) requests for the UI, and where it reports back.
+/// Show (`true`) and hide (`false`) requests, which each launcher window built after another
+/// follows from then on.
+#[derive(Clone)]
+pub struct VisibilityRequests(Arc<watch::Sender<bool>>);
+
+impl Default for VisibilityRequests {
+    fn default() -> Self {
+        Self(Arc::new(watch::Sender::new(false)))
+    }
+}
+
+impl VisibilityRequests {
+    pub fn ask(&self, shown: bool) {
+        self.0.send_replace(shown);
+    }
+
+    /// The requests made after this call.
+    pub fn subscribe(&self) -> watch::Receiver<bool> {
+        self.0.subscribe()
+    }
+}
+
+/// Show and hide requests for the UI, and where it reports back.
 pub struct Remote {
-    pub requests: UnboundedReceiver<bool>,
-    /// Sends requests as another invocation would, for parts of the launcher outside the UI.
-    pub requester: UnboundedSender<bool>,
+    pub requests: VisibilityRequests,
     pub shown: Shown,
 }
 
@@ -70,11 +90,11 @@ pub fn serve() -> Result<Remote> {
     let mut server = ServiceBuilder::new(protocol::SERVICE)
         .build()
         .context("bind the crownlauncher socket; is another launcher starting?")?;
-    let (sender, requests) = unbounded_channel();
+    let requests = VisibilityRequests::default();
     let shown = Shown::default();
     let mut handler = Handler {
         shown: shown.clone(),
-        sender: sender.clone(),
+        requests: requests.clone(),
     };
     std::thread::Builder::new()
         .name("crownlauncher-ipc".into())
@@ -87,23 +107,17 @@ pub fn serve() -> Result<Remote> {
             }
         })
         .context("start the IPC thread")?;
-    Ok(Remote {
-        requests,
-        requester: sender,
-        shown,
-    })
+    Ok(Remote { requests, shown })
 }
 
 struct Handler {
     shown: Shown,
-    sender: UnboundedSender<bool>,
+    requests: VisibilityRequests,
 }
 
 impl Handler {
     fn request(&mut self, shown: bool) -> Result<bool, RemoteError> {
-        self.sender
-            .send(shown)
-            .map_err(|_| RemoteError::handler("the launcher is shutting down"))?;
+        self.requests.ask(shown);
         self.shown.set(shown);
         Ok(shown)
     }

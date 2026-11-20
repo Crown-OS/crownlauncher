@@ -30,14 +30,14 @@ pub use palette::Palette;
 pub use state::Launcher;
 pub use visibility::Observers;
 
-use tokio::sync::mpsc::UnboundedReceiver;
+use tokio::sync::watch;
 
 use crate::catalog::Catalog;
 use metrics::{HAIRLINE, WINDOW_HEIGHT, WINDOW_RADIUS, WINDOW_WIDTH};
 
 /// The launcher, following show and hide `requests` and keeping `observers` told; shown at once
 /// unless `shown` is false.
-pub fn root(requests: UnboundedReceiver<bool>, observers: Observers, shown: bool) -> impl View {
+pub fn root(requests: watch::Receiver<bool>, observers: Observers, shown: bool) -> impl View {
     component(move |cx| {
         let theme = kit::provide_configured_theme(cx);
         let launcher = Launcher::new(cx, theme, observers);

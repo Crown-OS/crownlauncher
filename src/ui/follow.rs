@@ -3,12 +3,15 @@
 
 use crownplugin_proto::SearchResults;
 use crownui::prelude::Cx;
-use tokio::sync::mpsc::{UnboundedReceiver, unbounded_channel};
+use tokio::sync::{
+    mpsc::{UnboundedReceiver, unbounded_channel},
+    watch,
+};
 
 use super::{query, state::Launcher, visibility};
 use crate::{catalog::Catalog, plugins};
 
-pub fn start(cx: &mut Cx, launcher: Launcher, requests: UnboundedReceiver<bool>, shown: bool) {
+pub fn start(cx: &mut Cx, launcher: Launcher, requests: watch::Receiver<bool>, shown: bool) {
     remote(cx, launcher, requests);
     connect_plugins(cx, launcher);
     rescan(cx, launcher);
@@ -17,15 +20,16 @@ pub fn start(cx: &mut Cx, launcher: Launcher, requests: UnboundedReceiver<bool>,
     }
 }
 
-fn remote(cx: &mut Cx, launcher: Launcher, mut requests: UnboundedReceiver<bool>) {
+fn remote(cx: &mut Cx, launcher: Launcher, mut requests: watch::Receiver<bool>) {
     let next = async move {
-        let request = requests.recv().await;
-        (requests, request)
+        let open = requests.changed().await.is_ok();
+        (requests, open)
     };
-    cx.spawn(next, move |cx, (requests, request)| {
-        let Some(shown) = request else {
+    cx.spawn(next, move |cx, (mut requests, open)| {
+        if !open {
             return;
-        };
+        }
+        let shown = *requests.borrow_and_update();
         visibility::set(cx, launcher, shown);
         remote(cx, launcher, requests);
     });
