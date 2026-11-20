@@ -13,7 +13,7 @@ use super::{
     visibility::Observers,
 };
 use crate::{
-    catalog::{Catalog, DesktopId},
+    catalog::{Catalog, DesktopId, SharedCatalog},
     plugins::PluginCommand,
     search::{Results, Selection},
 };
@@ -32,6 +32,8 @@ pub struct AppIcon {
 #[derive(Clone, Copy)]
 pub struct Launcher {
     pub catalog: Signal<Catalog>,
+    /// Where a rescan publishes the catalog for every window.
+    pub shared_catalog: Store<SharedCatalog>,
     pub theme: Signal<Theme>,
     pub capabilities: Signal<Capabilities>,
     pub scale: Signal<f32>,
@@ -56,6 +58,7 @@ impl Launcher {
         let scale = cx.scale_factor();
         Self {
             catalog: cx.signal(Catalog::default()),
+            shared_catalog: cx.store(SharedCatalog::default()),
             theme,
             capabilities,
             scale,

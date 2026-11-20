@@ -7,7 +7,7 @@ use tokio::sync::mpsc::UnboundedReceiver;
 
 use crate::ipc::VisibilityRequests;
 
-/// `shown` follows the launcher; a click sends `false` down `requests`.
+/// `shown` follows the launcher; a click asks `requests` to hide it.
 pub fn catcher(shown: UnboundedReceiver<bool>, requests: VisibilityRequests) -> impl View {
     component(move |cx| {
         let active = cx.signal(false);
@@ -17,7 +17,7 @@ pub fn catcher(shown: UnboundedReceiver<bool>, requests: VisibilityRequests) -> 
             .inset(0.0)
             .pointer_events_auto()
             .hidden(bind(move |runtime| !active.get(runtime)))
-            .on_click(move |_, _| requests.ask(false));
+            .on_click(move |_, _| requests.hide());
         vstack(backdrop).absolute().inset(0.0).pointer_events_none()
     })
 }

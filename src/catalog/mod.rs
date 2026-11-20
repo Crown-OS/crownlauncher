@@ -2,6 +2,7 @@ mod desktop_id;
 mod entry;
 mod exec;
 mod scan;
+mod shared;
 
 use std::sync::Arc;
 
@@ -9,6 +10,7 @@ pub use desktop_id::DesktopId;
 pub use entry::AppEntry;
 pub use exec::command;
 pub use scan::scan;
+pub use shared::SharedCatalog;
 
 use crate::{
     search::Query,

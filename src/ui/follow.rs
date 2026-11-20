@@ -4,53 +4,65 @@
 use crownplugin_proto::SearchResults;
 use crownui::prelude::Cx;
 use tokio::sync::{
-    mpsc::{UnboundedReceiver, unbounded_channel},
+    broadcast::{self, error::RecvError},
     watch,
 };
 
 use super::{query, state::Launcher, visibility};
-use crate::{catalog::Catalog, plugins};
+use crate::{
+    catalog::{Catalog, SharedCatalog},
+    ipc::OutputRequests,
+    plugins::PluginLink,
+};
 
-pub fn start(cx: &mut Cx, launcher: Launcher, requests: watch::Receiver<bool>, shown: bool) {
-    remote(cx, launcher, requests);
-    connect_plugins(cx, launcher);
-    rescan(cx, launcher);
+/// What a launcher window follows from outside its UI.
+pub struct Links {
+    pub requests: OutputRequests,
+    pub catalog: SharedCatalog,
+    pub plugins: PluginLink,
+}
+
+pub fn start(cx: &mut Cx, launcher: Launcher, links: Links, shown: bool) {
+    remote(cx, launcher, links.requests);
+    follow_catalog(cx, launcher, links.catalog.subscribe());
+    launcher
+        .shared_catalog
+        .update(cx, |shared| *shared = links.catalog);
+    launcher
+        .plugins
+        .update(cx, |plugins| *plugins = Some(links.plugins.commands()));
+    follow_answers(cx, launcher, links.plugins.subscribe());
     if shown {
         cx.request_animation_frame(move |cx, _| visibility::set(cx, launcher, true));
     }
 }
 
-fn remote(cx: &mut Cx, launcher: Launcher, mut requests: watch::Receiver<bool>) {
-    let next = async move {
-        let open = requests.changed().await.is_ok();
-        (requests, open)
-    };
-    cx.spawn(next, move |cx, (mut requests, open)| {
-        if !open {
+fn remote(cx: &mut Cx, launcher: Launcher, requests: OutputRequests) {
+    cx.spawn(requests.next(), move |cx, request| {
+        let Some((requests, shown)) = request else {
             return;
-        }
-        let shown = *requests.borrow_and_update();
+        };
         visibility::set(cx, launcher, shown);
         remote(cx, launcher, requests);
     });
 }
 
-fn connect_plugins(cx: &mut Cx, launcher: Launcher) {
-    let (answers, inbox) = unbounded_channel();
-    let (commands, outbox) = unbounded_channel();
-    launcher
-        .plugins
-        .update(cx, |plugins| *plugins = Some(commands));
-    cx.spawn(plugins::run(answers, outbox), |_, ()| {});
-    follow_answers(cx, launcher, inbox);
-}
-
-fn follow_answers(cx: &mut Cx, launcher: Launcher, mut inbox: UnboundedReceiver<SearchResults>) {
+fn follow_answers(
+    cx: &mut Cx,
+    launcher: Launcher,
+    mut answers: broadcast::Receiver<SearchResults>,
+) {
     let next = async move {
-        let answer = inbox.recv().await;
-        (inbox, answer)
+        let answer = loop {
+            match answers.recv().await {
+                Ok(answer) => break Some(answer),
+                Err(RecvError::Lagged(_)) => continue,
+                Err(RecvError::Closed) => break None,
+            }
+        };
+        (answers, answer)
     };
-    cx.spawn(next, move |cx, (inbox, answer)| {
+    cx.spawn(next, move |cx, (answers, answer)| {
         let Some(answer) = answer else {
             return;
         };
@@ -58,22 +70,35 @@ fn follow_answers(cx: &mut Cx, launcher: Launcher, mut inbox: UnboundedReceiver<
         if results.answer(answer) {
             launcher.results.set(cx, results);
         }
-        follow_answers(cx, launcher, inbox);
+        follow_answers(cx, launcher, answers);
     });
 }
 
-/// Reloads the installed apps, keeping the old catalog when nothing changed. The list of every
-/// app follows; a search under way keeps its answers.
-pub fn rescan(cx: &mut Cx, launcher: Launcher) {
-    let scan = async { tokio::task::spawn_blocking(Catalog::load).await.ok() };
-    cx.spawn(scan, move |cx, catalog| {
-        if let Some(catalog) = catalog
-            && launcher.catalog.with(cx, |current| *current != catalog)
-        {
-            launcher.catalog.set(cx, catalog);
-            if !launcher.searching(cx) {
-                query::list_apps(cx, launcher);
-            }
+/// Takes each catalog published for every window. The list of every app follows; a search under
+/// way keeps its answers.
+fn follow_catalog(cx: &mut Cx, launcher: Launcher, mut catalogs: watch::Receiver<Catalog>) {
+    let next = async move {
+        let open = catalogs.changed().await.is_ok();
+        let catalog = open.then(|| catalogs.borrow_and_update().clone());
+        (catalogs, catalog)
+    };
+    cx.spawn(next, move |cx, (catalogs, catalog)| {
+        let Some(catalog) = catalog else {
+            return;
+        };
+        launcher.catalog.set(cx, catalog);
+        if !launcher.searching(cx) {
+            query::list_apps(cx, launcher);
         }
+        follow_catalog(cx, launcher, catalogs);
     });
+}
+
+/// Loads the installed apps again for every window; nothing changes when they are the same.
+pub fn rescan(cx: &mut Cx, launcher: Launcher) {
+    let shared = launcher.shared_catalog.with(cx, SharedCatalog::clone);
+    let scan = async move {
+        let _ = tokio::task::spawn_blocking(move || shared.publish(Catalog::load())).await;
+    };
+    cx.spawn(scan, |_, ()| {});
 }

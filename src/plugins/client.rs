@@ -6,16 +6,16 @@ use std::time::Duration;
 
 use crownos_ipc::adapter::tokio::AsyncClient;
 use crownplugin_proto::{SearchResults, plugind};
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tokio::sync::{broadcast, mpsc::UnboundedReceiver};
 
 use super::PluginCommand;
 
 const FIRST_RETRY: Duration = Duration::from_secs(1);
 const LAST_RETRY: Duration = Duration::from_secs(30);
 
-/// Runs until the launcher drops its command sender or its answer receiver.
+/// Runs until every command sender is gone. Answers go to every window listening then.
 pub async fn run(
-    answers: UnboundedSender<SearchResults>,
+    answers: broadcast::Sender<SearchResults>,
     mut commands: UnboundedReceiver<PluginCommand>,
 ) {
     let mut retry = FIRST_RETRY;
@@ -46,7 +46,7 @@ async fn connect() -> Option<AsyncClient> {
 
 /// Pumps one connection until it breaks; returns whether the launcher is still there.
 async fn session(
-    answers: &UnboundedSender<SearchResults>,
+    answers: &broadcast::Sender<SearchResults>,
     commands: &mut UnboundedReceiver<PluginCommand>,
     mut client: AsyncClient,
 ) -> bool {
@@ -63,10 +63,8 @@ async fn session(
                     return true;
                 }
                 let inbox = client.client_mut();
-                let delivered = std::iter::from_fn(|| inbox.next_event::<plugind::SearchAnswered>())
-                    .all(|answered| answers.send(answered.results).is_ok());
-                if !delivered {
-                    return false;
+                while let Some(answered) = inbox.next_event::<plugind::SearchAnswered>() {
+                    let _ = answers.send(answered.results);
                 }
             }
         }

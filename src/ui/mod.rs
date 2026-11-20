@@ -25,23 +25,22 @@ use crownui::{
 };
 
 pub use catcher::catcher;
+pub use follow::Links;
 use glass::glass;
 pub use palette::Palette;
 pub use state::Launcher;
 pub use visibility::Observers;
 
-use tokio::sync::watch;
-
 use crate::catalog::Catalog;
 use metrics::{HAIRLINE, WINDOW_HEIGHT, WINDOW_RADIUS, WINDOW_WIDTH};
 
-/// The launcher, following show and hide `requests` and keeping `observers` told; shown at once
-/// unless `shown` is false.
-pub fn root(requests: watch::Receiver<bool>, observers: Observers, shown: bool) -> impl View {
+/// The launcher, following its `links` and keeping `observers` told; shown at once unless
+/// `shown` is false.
+pub fn root(links: Links, observers: Observers, shown: bool) -> impl View {
     component(move |cx| {
         let theme = kit::provide_configured_theme(cx);
         let launcher = Launcher::new(cx, theme, observers);
-        follow::start(cx, launcher, requests, shown);
+        follow::start(cx, launcher, links, shown);
         zstack(centred(launcher))
             .pointer_events_none()
             .on_key_down(move |cx, event| keys::down(cx, launcher, event))

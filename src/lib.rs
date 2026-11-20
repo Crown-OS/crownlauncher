@@ -15,10 +15,9 @@ use anyhow::{Context, Result};
 
 use surfaces::LauncherSurfaces;
 
-/// Runs the launcher, shown at once unless `shown` is false: a window-sized surface in the
-/// middle of an output, over an invisible full-output one that catches clicks off the window.
+/// Runs the launcher, shown at once unless `shown` is false: on every output a window-sized
+/// surface in the middle, over an invisible full-output one that catches clicks off the window.
 pub fn app(shown: bool) -> Result<()> {
-    let remote = ipc::serve()?;
-    remote.shown.set(shown);
-    crownui::run_surfaces(LauncherSurfaces::new(remote)).context("the launcher stopped")
+    let surfaces = LauncherSurfaces::new(ipc::serve()?, shown)?;
+    crownui::run_surfaces(surfaces).context("the launcher stopped")
 }

@@ -13,7 +13,9 @@ use anyhow::{Context, Result};
 use crownos_ipc::{RemoteError, ServiceBuilder, blocking};
 use tokio::sync::watch;
 
-use crate::protocol::protocol;
+use crownui::surfaces::OutputId;
+
+use crate::{protocol::protocol, surfaces::HostOutput};
 
 const FORWARD_TIMEOUT: Duration = Duration::from_secs(2);
 
@@ -31,32 +33,61 @@ impl Shown {
     }
 }
 
-/// Show (`true`) and hide (`false`) requests, which each launcher window built after another
-/// follows from then on.
+/// The output the launcher is asked to show on, or `None` while it is asked to hide. Each
+/// launcher window follows the requests made after it was built.
 #[derive(Clone)]
-pub struct VisibilityRequests(Arc<watch::Sender<bool>>);
+pub struct VisibilityRequests(Arc<watch::Sender<Option<OutputId>>>);
 
 impl Default for VisibilityRequests {
     fn default() -> Self {
-        Self(Arc::new(watch::Sender::new(false)))
+        Self(Arc::new(watch::Sender::new(None)))
     }
 }
 
 impl VisibilityRequests {
-    pub fn ask(&self, shown: bool) {
-        self.0.send_replace(shown);
+    pub fn show_on(&self, output: OutputId) {
+        self.0.send_replace(Some(output));
     }
 
-    /// The requests made after this call.
-    pub fn subscribe(&self) -> watch::Receiver<bool> {
-        self.0.subscribe()
+    pub fn hide(&self) {
+        self.0.send_replace(None);
+    }
+
+    /// The output last asked to show the launcher, if the last request was to show it.
+    pub fn asked_output(&self) -> Option<OutputId> {
+        *self.0.borrow()
+    }
+
+    /// The requests made after this call, as the window on `output` follows them.
+    pub fn subscribe(&self, output: OutputId) -> OutputRequests {
+        OutputRequests {
+            requests: self.0.subscribe(),
+            output,
+        }
     }
 }
 
-/// Show and hide requests for the UI, and where it reports back.
+/// Show and hide requests for the launcher window on one output.
+pub struct OutputRequests {
+    requests: watch::Receiver<Option<OutputId>>,
+    output: OutputId,
+}
+
+impl OutputRequests {
+    /// Waits for the next request and tells whether it shows this window; `None` once no more
+    /// requests can come.
+    pub async fn next(mut self) -> Option<(Self, bool)> {
+        self.requests.changed().await.ok()?;
+        let shown = *self.requests.borrow_and_update() == Some(self.output);
+        Some((self, shown))
+    }
+}
+
+/// Show and hide requests for the UI, where it reports back, and where a hidden launcher shows.
 pub struct Remote {
     pub requests: VisibilityRequests,
     pub shown: Shown,
+    pub host: HostOutput,
 }
 
 /// What another invocation asks of the running launcher.
@@ -92,9 +123,11 @@ pub fn serve() -> Result<Remote> {
         .context("bind the crownlauncher socket; is another launcher starting?")?;
     let requests = VisibilityRequests::default();
     let shown = Shown::default();
+    let host = HostOutput::default();
     let mut handler = Handler {
         shown: shown.clone(),
         requests: requests.clone(),
+        host: host.clone(),
     };
     std::thread::Builder::new()
         .name("crownlauncher-ipc".into())
@@ -107,17 +140,34 @@ pub fn serve() -> Result<Remote> {
             }
         })
         .context("start the IPC thread")?;
-    Ok(Remote { requests, shown })
+    Ok(Remote {
+        requests,
+        shown,
+        host,
+    })
 }
 
 struct Handler {
     shown: Shown,
     requests: VisibilityRequests,
+    host: HostOutput,
 }
 
 impl Handler {
-    fn request(&mut self, shown: bool) -> Result<bool, RemoteError> {
-        self.requests.ask(shown);
+    /// Shows a hidden launcher on the host output, leaves a shown one where it is, or hides it.
+    fn request(&mut self, show: bool) -> Result<bool, RemoteError> {
+        let shown = match (show, self.shown.get(), self.host.get()) {
+            (true, true, _) => true,
+            (true, false, Some(host)) => {
+                self.requests.show_on(host);
+                true
+            }
+            (true, false, None) => false,
+            (false, ..) => {
+                self.requests.hide();
+                false
+            }
+        };
         self.shown.set(shown);
         Ok(shown)
     }
