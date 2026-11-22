@@ -102,13 +102,7 @@ impl Surfaces for LauncherSurfaces {
             LayerOptions::new(CATCHER_NAMESPACE, Anchor::ALL),
             FALLBACK_SIZE,
         );
-        let window = surface(
-            "CrownLauncher",
-            LayerOptions::new(NAMESPACE, Anchor::NONE)
-                .width(LayerExtent::Fixed(SURFACE_WIDTH))
-                .height(LayerExtent::Fixed(SURFACE_HEIGHT)),
-            (SURFACE_WIDTH, SURFACE_HEIGHT),
-        );
+        let window = window_config();
         vec![
             (
                 ui::catcher(from_launcher, self.requests.clone()).boxed(),
@@ -117,6 +111,17 @@ impl Surfaces for LauncherSurfaces {
             (ui::root(links, observers, shown).boxed(), window),
         ]
     }
+}
+
+/// The launcher window's own surface: window-sized, in the middle of the output.
+pub fn window_config() -> AppConfig {
+    surface(
+        "CrownLauncher",
+        LayerOptions::new(NAMESPACE, Anchor::NONE)
+            .width(LayerExtent::Fixed(SURFACE_WIDTH))
+            .height(LayerExtent::Fixed(SURFACE_HEIGHT)),
+        (SURFACE_WIDTH, SURFACE_HEIGHT),
+    )
 }
 
 fn surface(title: &str, layer: LayerOptions, size: (u32, u32)) -> AppConfig {

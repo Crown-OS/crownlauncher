@@ -14,6 +14,7 @@ mod util;
 use anyhow::{Context, Result};
 
 use surfaces::LauncherSurfaces;
+pub use surfaces::window_config;
 
 /// Runs the launcher, shown at once unless `shown` is false: on every output a window-sized
 /// surface in the middle, over an invisible full-output one that catches clicks off the window.

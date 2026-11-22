@@ -41,10 +41,15 @@ pub fn root(links: Links, observers: Observers, shown: bool) -> impl View {
         let theme = kit::provide_configured_theme(cx);
         let launcher = Launcher::new(cx, theme, observers);
         follow::start(cx, launcher, links, shown);
-        zstack(centred(launcher))
-            .pointer_events_none()
-            .on_key_down(move |cx, event| keys::down(cx, launcher, event))
+        overlay(launcher)
     })
+}
+
+/// The overlay drawing `launcher` as it is, taking the keys it is sent.
+pub fn overlay(launcher: Launcher) -> impl View {
+    zstack(centred(launcher))
+        .pointer_events_none()
+        .on_key_down(move |cx, event| keys::down(cx, launcher, event))
 }
 
 fn hairline(launcher: Launcher) -> impl View {

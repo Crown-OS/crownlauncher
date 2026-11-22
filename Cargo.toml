@@ -27,6 +27,7 @@ resvg = { version = "0.48", default-features = false }
 image = { version = "0.25", default-features = false, features = ["png"] }
 
 [dev-dependencies]
+capture = { path = "../crownui/capture" }
 crowntest = { git = "https://github.com/crown-os/crownui" }
 impeller = { git = "https://github.com/crown-os/crownui", features = ["static"] }
 runtime = { git = "https://github.com/crown-os/crownui" }
