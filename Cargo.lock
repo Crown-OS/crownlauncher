@@ -357,6 +357,7 @@ dependencies = [
 name = "crownos-ipc"
 version = "0.1.0"
 dependencies = [
+ "libc",
  "log",
  "postcard",
  "rustix",
